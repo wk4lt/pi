@@ -12,6 +12,64 @@
 
 # Pi
 
+## 公司版本：Linux 一键打包与安装
+
+本分支 `company/v1.4` 基于上游 `v1.4.0`，用于研发电脑和 Linux 服务器上的命令行编程助手。Linux 安装包包含 Node.js 22.19.0、fd/rg 搜索工具和运行依赖，可安装到指定目录，并从任意项目目录执行 `pi`。
+
+### 获取源码并打包
+
+构建机需要 Linux、Node.js 18+、npm、curl、tar、Bash 和 GNU coreutils。首次构建需要访问 Node.js、GitHub、pi.dev 和 npm 镜像，工具会自动准备固定的 Node.js 22.19.0，无需手动安装构建依赖。
+
+```bash
+git clone --branch company/v1.4 --single-branch https://github.com/wk4lt/pi.git
+cd pi
+npm run package:linux
+```
+
+后续修改源码后，在仓库根目录重新执行 `npm run package:linux` 即可。它会检查、编译、打包，并在源码目录外解压安装，通过本地模拟模型验证工具调用，不消耗真实模型额度。
+
+每次生成独立的构建目录，保留旧包。最新成功的安装包及校验文件路径记录在：
+
+```bash
+cat .artifacts/company-linux/latest.json
+```
+
+可用 `npm run package:linux -- --out /path/to/new-directory` 指定一个尚不存在的输出目录。归档和模型目录缓存位于 `.artifacts/company-cache/`，npm 依赖使用当前 npm 缓存；缓存缺失时仍需联网。安装包、缓存和构建产物不进入 Git。
+
+### 安装到指定目录
+
+将生成的 `.tar.gz` 和同名 `.tar.gz.sha256` 文件传到目标机器。以 Linux x64 包为例，在这两个文件所在目录执行：
+
+```bash
+sha256sum --check company-pi-1.4.0-linux-x64.tar.gz.sha256
+tar -xzf company-pi-1.4.0-linux-x64.tar.gz
+cd company-pi-1.4.0-linux-x64
+sudo bash install.sh --prefix /opt/company-pi --bin-dir /usr/local/bin
+```
+
+`--prefix` 指定程序安装目录，`--bin-dir` 指定命令目录，两者均可修改。安装不需要 npm、源码或外网。目标机器需要相同 CPU 架构、兼容的 glibc、Bash 和 GNU coreutils；本次已验证 Linux x64，ARM64 仍需实机验证，Alpine/musl 不在支持范围内。
+
+无管理员权限时，可在解压目录执行：
+
+```bash
+bash install.sh --prefix "$HOME/apps/company-pi" --bin-dir "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+将最后一行加入自己的 `~/.bashrc` 可持久生效。安装器不覆盖已有安装目录或 `pi` 命令；升级时先安装到新目录、验证后再切换命令链接。
+
+### 在任意项目目录使用
+
+```bash
+pi --version
+cd /path/to/your-project
+pi
+```
+
+首次使用需要连接模型：用 `/login` 配置受支持的服务，或在 `~/.pi/agent/models.json` 配置公司模型，再用 `/model` 选择。程序会操作启动时所在的项目目录，配置和会话默认保存在每位用户的 `~/.pi/agent/`。
+
+项目背景、模型配置模板和日常操作见 [中文上手说明](GETTING_STARTED_CN.md)，基线与内网导入约定见 [公司维护说明](COMPANY.md)。以下为保留的上游项目介绍和官方版本使用方式。
+
 Pi is a minimal, extensible agent harness that you can make your own.
 
 Adapt Pi to your workflows, not the other way around. Customize Pi with [extensions](packages/coding-agent/docs/extensions.md), [skills](packages/coding-agent/docs/skills.md), [prompt templates](packages/coding-agent/docs/prompt-templates.md), and [themes](packages/coding-agent/docs/themes.md). Bundle them as [Pi packages](packages/coding-agent/docs/packages.md) and share via npm or git.

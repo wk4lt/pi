@@ -1,0 +1,39 @@
+{
+	"nodeVersion": "22.19.0",
+	"platforms": {
+		"x64": {
+			"node": {
+				"filename": "node-v22.19.0-linux-x64.tar.xz",
+				"url": "https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.xz",
+				"sha256": "c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2"
+			},
+			"fd": {
+				"filename": "fd-v10.3.0-x86_64-unknown-linux-musl.tar.gz",
+				"url": "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-unknown-linux-musl.tar.gz",
+				"sha256": "2b6bfaae8c48f12050813c2ffe1884c61ea26e750d803df9c9114550a314cd14"
+			},
+			"rg": {
+				"filename": "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz",
+				"url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz",
+				"sha256": "4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+			}
+		},
+		"arm64": {
+			"node": {
+				"filename": "node-v22.19.0-linux-arm64.tar.xz",
+				"url": "https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-arm64.tar.xz",
+				"sha256": "0b2d9f564b6594222a62c82e1df2efe119dd4a4aff29644f4dd325bf360b6bcc"
+			},
+			"fd": {
+				"filename": "fd-v10.3.0-aarch64-unknown-linux-musl.tar.gz",
+				"url": "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-aarch64-unknown-linux-musl.tar.gz",
+				"sha256": "996b9b1366433b211cb3bbedba91c9dbce2431842144d925428ead0adf32020b"
+			},
+			"rg": {
+				"filename": "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz",
+				"url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz",
+				"sha256": "c827481c4ff4ea10c9dc7a4022c8de5db34a5737cb74484d62eb94a95841ab2f"
+			}
+		}
+	}
+}

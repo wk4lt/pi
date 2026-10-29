@@ -1,0 +1,59 @@
+# Linux 安装包
+
+这是基于 pi v1.4.0 的公司 CLI 安装包，包含 Node.js 22.19.0、fd 10.3.0、ripgrep 14.1.1、应用和固定版本的运行依赖。安装不需要 npm、源码或外网；处理任务需要可访问的模型服务。
+
+包名中的 `linux-x64` 或 `linux-arm64` 表示目标架构。使用相同架构的 glibc Linux；Alpine/musl 不在本包支持范围内。系统还需提供 Bash、GNU coreutils 和项目本身需要的开发工具。
+
+## 安装
+
+解压后执行：
+
+```bash
+bash install.sh --prefix "$HOME/apps/company-pi" --bin-dir "$HOME/.local/bin"
+```
+
+如 `~/.local/bin` 尚未在 PATH 中，在当前终端执行：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+将同一行加到自己的 `~/.bashrc`，新 Bash 终端也能使用。使用其他 shell 时加到相应的启动文件。系统级安装可由管理员执行：
+
+```bash
+sudo bash install.sh --prefix /opt/company-pi --bin-dir /usr/local/bin
+```
+
+安装器校验文件，不覆盖已有目录或 `pi` 命令。需要其他安装位置时同时指定 `--prefix` 和 `--bin-dir`；命令目录必须在安装目录之外。
+
+## 使用
+
+```bash
+pi --version
+cd /path/to/your-project
+pi
+```
+
+在 pi 中输入任务，例如“用中文说明项目的目录结构和启动方式”。模型未配置时，用 `/login` 配置受支持的服务，或在 `~/.pi/agent/models.json` 配置公司模型，再用 `/model` 选择。
+
+`pi` 默认具有启动用户的权限，可以直接读写文件和执行命令。安装目录只放程序；模型凭据、配置和会话默认保存在每位用户的 `~/.pi/agent/`。工作目录是启动 `pi` 时所在的项目目录。
+
+启动器使用安装包自带的 Node，在 PATH 末尾补充内置搜索工具。现有工具链优先，项目构建命令仍使用用户配置的 Node、编译器等工具。
+
+```bash
+pi --continue
+pi -p "用中文解释项目结构，先不要修改文件。"
+```
+
+## 安装内容与维护
+
+- `bin/pi`：启动命令，PATH 中的 `pi` 链接指向它。
+- `runtime/`：独立 Node.js 运行时及许可文件。
+- `tools/`：文件搜索工具及其上游发行文件、许可文件。
+- `app/`：应用、依赖、锁文件和本地工作区包归档。
+- `distribution.json`：版本、源码提交、是否含未提交改动、架构和模型目录 revision。
+- `SHA256SUMS`：安装包内文件校验值。
+
+使用新的公司安装包升级，不使用 `pi update --self` 跟随公网版本。新包安装到新的目录并验证后，由管理员切换命令链接；用户配置和会话独立保存。
+
+卸载时移除命令链接和对应安装目录。`~/.pi/agent/` 中的会话与配置按需保留。

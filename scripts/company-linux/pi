@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Run the installed CLI in the user's directory, keeping their toolchain ahead of bundled search tools.
+set -euo pipefail
+
+launcher=$(readlink -f -- "${BASH_SOURCE[0]}")
+install_root=$(dirname -- "$(dirname -- "$launcher")")
+export PATH="${PATH:+$PATH:}$install_root/tools"
+exec "$install_root/runtime/bin/node" "$install_root/app/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" "$@"
