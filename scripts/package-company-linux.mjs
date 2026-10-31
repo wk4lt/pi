@@ -91,6 +91,7 @@ cpSync(nodeLicense, join(payload, "runtime/NODE-LICENSE.txt"));
 mkdirSync(join(payload, "bin"));
 cpSync(join(repoRoot, "scripts/company-linux/pi"), join(payload, "bin/pi"));
 cpSync(join(repoRoot, "scripts/company-linux/install.sh"), join(payload, "install.sh"));
+cpSync(join(repoRoot, "scripts/company-linux/uninstall.sh"), join(payload, "uninstall.sh"));
 cpSync(join(repoRoot, "scripts/company-linux/README.md"), join(payload, "README.md"));
 cpSync(join(repoRoot, "LICENSE"), join(payload, "LICENSE"));
 writeFileSync(
@@ -128,4 +129,4 @@ const archive = join(output, `${name}.tar.gz`);
 const digest = createHash("sha256").update(readFileSync(archive)).digest("hex");
 writeFileSync(`${archive}.sha256`, `${digest}  ${name}.tar.gz\n`);
 console.log(`\nPackage: ${archive} (${(statSync(archive).size / 1024 / 1024).toFixed(1)} MiB)`);
-console.log(`Install: bash ${join(payload, "install.sh")} --prefix <directory> --bin-dir <PATH directory>`);
+console.log(`Install: bash ${join(payload, "install.sh")} [--prefix <directory> --bin-dir <PATH directory>]`);

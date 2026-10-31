@@ -7,7 +7,7 @@ usage() {
 Usage: bash install.sh [--prefix <directory>] [--bin-dir <directory>]
 
 Defaults:
-  --prefix   $HOME/.local/share/company-pi
+  --prefix   $HOME/apps/company-pi
   --bin-dir  $HOME/.local/bin
 
 The package includes Node.js and dependencies. Installation does not use the network.
@@ -15,7 +15,7 @@ Existing install directories and commands are never overwritten.
 USAGE
 }
 
-prefix="$HOME/.local/share/company-pi"
+prefix="$HOME/apps/company-pi"
 bin_dir="$HOME/.local/bin"
 while (($#)); do
     case "$1" in
@@ -66,6 +66,7 @@ staging=$(mktemp -d "$(dirname -- "$prefix")/.company-pi-install.XXXXXXXX")
 trap 'rm -rf -- "$staging"' EXIT
 cp -a -- "$source_dir/." "$staging/"
 PI_OFFLINE=1 PI_TELEMETRY=0 "$staging/bin/pi" --version
+ln -s -- "$command_link" "$staging/.installed-command"
 mv -T --no-clobber -- "$staging" "$prefix"
 if [[ -d "$staging" ]]; then
     echo "Install directory was created by another process: $prefix" >&2

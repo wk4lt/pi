@@ -35,13 +35,14 @@ function fixture(t) {
 	mkdirSync(cwd);
 	symlinkSync(process.execPath, join(source, "runtime/bin/node"));
 	cpSync(join(scripts, "company-linux/install.sh"), join(source, "install.sh"));
+	cpSync(join(scripts, "company-linux/uninstall.sh"), join(source, "uninstall.sh"));
 	cpSync(join(scripts, "company-linux/pi"), join(source, "bin/pi"));
 	chmodSync(join(source, "bin/pi"), 0o755);
 	writeFileSync(
 		join(source, cli),
 		'if(process.argv[2]==="--version") console.log("1.4.0"); else console.log(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),path:process.env.PATH,offline:process.env.PI_OFFLINE}));\n',
 	);
-	const files = ["install.sh", "bin/pi", cli];
+	const files = ["install.sh", "uninstall.sh", "bin/pi", cli];
 	writeFileSync(
 		join(source, "SHA256SUMS"),
 		`${files
@@ -148,4 +149,39 @@ test("uses the configured npm mirror without an extra environment variable", { s
 	const args = JSON.parse(readFileSync(marker, "utf8"));
 	assert.equal(args[0], "ci");
 	assert.ok(args.includes("--registry=https://registry.example.invalid/"));
+});
+
+test("uses the default paths and uninstalls while keeping user configuration", { skip: process.platform !== "linux" }, (t) => {
+	const f = fixture(t);
+	const home = join(f.directory, "home");
+	const prefix = join(home, "apps/company-pi");
+	const command = join(home, ".local/bin/pi");
+	const config = join(home, ".pi/agent");
+	mkdirSync(config, { recursive: true });
+	writeFileSync(join(config, "settings.json"), "keep");
+	execFileSync("bash", [join(f.source, "install.sh")], { env: { ...process.env, HOME: home } });
+	assert.equal(execFileSync(command, ["--version"], { encoding: "utf8" }).trim(), "1.4.0");
+	execFileSync("bash", [join(prefix, "uninstall.sh")], { env: { ...process.env, HOME: home } });
+	assert.equal(existsSync(prefix), false);
+	assert.equal(existsSync(command), false);
+	assert.equal(readFileSync(join(config, "settings.json"), "utf8"), "keep");
+});
+
+test("uninstalls a custom prefix without deleting a replaced command", { skip: process.platform !== "linux" }, (t) => {
+	const f = fixture(t);
+	execFileSync("bash", f.args);
+	const command = join(f.bin, "pi");
+	rmSync(command);
+	writeFileSync(command, "other program");
+	execFileSync("bash", [join(f.prefix, "uninstall.sh")]);
+	assert.equal(existsSync(f.prefix), false);
+	assert.equal(readFileSync(command, "utf8"), "other program");
+});
+
+test("refuses to uninstall an extracted but uninstalled package", { skip: process.platform !== "linux" }, (t) => {
+	const f = fixture(t);
+	const result = spawnSync("bash", [join(f.source, "uninstall.sh")], { encoding: "utf8" });
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /Not a recognized installed/);
+	assert.equal(existsSync(join(f.source, "install.sh")), true);
 });
