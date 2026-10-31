@@ -9,7 +9,7 @@
 解压后执行：
 
 ```bash
-bash install.sh --prefix "$HOME/apps/company-pi" --bin-dir "$HOME/.local/bin"
+bash install.sh
 ```
 
 如 `~/.local/bin` 尚未在 PATH 中，在当前终端执行：
@@ -24,7 +24,7 @@ export PATH="$HOME/.local/bin:$PATH"
 sudo bash install.sh --prefix /opt/company-pi --bin-dir /usr/local/bin
 ```
 
-安装器校验文件，不覆盖已有目录或 `pi` 命令。需要其他安装位置时同时指定 `--prefix` 和 `--bin-dir`；命令目录必须在安装目录之外。
+默认安装到 `~/apps/company-pi`，命令链接位于 `~/.local/bin/pi`。安装器校验文件，不覆盖已有目录或 `pi` 命令。可以使用 `--prefix` 和 `--bin-dir` 自定义路径；命令目录必须在安装目录之外。
 
 ## 使用
 
@@ -55,4 +55,10 @@ pi -p "用中文解释项目结构，先不要修改文件。"
 
 使用新的公司安装包升级，不使用 `pi update --self` 跟随公网版本。新包安装到新的目录并验证后，由管理员切换命令链接；用户配置和会话独立保存。
 
-卸载时移除命令链接和对应安装目录。`~/.pi/agent/` 中的会话与配置按需保留。
+卸载默认安装：
+
+```bash
+bash "$HOME/apps/company-pi/uninstall.sh"
+```
+
+自定义安装时，运行对应安装目录下的 `uninstall.sh`。卸载会删除整个安装目录，包括自行放入其中的文件；仅当命令链接仍指向本安装时才移除它。`~/.pi/agent/` 中的会话和配置会保留。旧版安装包不含卸载脚本，可手动移除对应目录及命令链接。
