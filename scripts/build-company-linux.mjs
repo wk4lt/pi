@@ -22,9 +22,8 @@ if (!npm || !existsSync(npm)) throw new Error("Run with npm run package:linux to
 const run = (command, args, options = {}) => execFileSync(command, args, { cwd: repoRoot, stdio: "inherit", ...options });
 const registry = execFileSync(process.execPath, [npm, "config", "get", "registry"], { cwd: repoRoot, encoding: "utf8" }).trim();
 const registryUrl = new URL(registry);
-const approvedRegistry = process.env.PI_COMPANY_NPM_REGISTRY;
-if (!approvedRegistry || registryUrl.href !== new URL(approvedRegistry).href || registryUrl.protocol !== "https:" || registryUrl.hostname === "registry.npmjs.org" || registryUrl.username || registryUrl.password) {
-	throw new Error("Configure npm registry and PI_COMPANY_NPM_REGISTRY to the same company HTTPS mirror before building.");
+if (registryUrl.protocol !== "https:" || registryUrl.hostname === "registry.npmjs.org" || registryUrl.username || registryUrl.password) {
+	throw new Error("Configure npm registry to an HTTPS company mirror before building.");
 }
 // Only the default npm registry and the configured company host can appear in reviewed locks.
 const scopes = new Set(["earendil-works"]);

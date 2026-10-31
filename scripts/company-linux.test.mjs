@@ -134,3 +134,18 @@ test("rejects a public npm registry before installing dependencies", { skip: pro
 	assert.match(result.stderr, /Configure npm registry/);
 	assert.equal(existsSync(marker), false);
 });
+
+test("uses the configured npm mirror without an extra environment variable", { skip: process.platform !== "linux" }, (t) => {
+	const directory = mkdtempSync(join(tmpdir(), "pi-registry-check-"));
+	t.after(() => rmSync(directory, { recursive: true, force: true }));
+	const fakeNpm = join(directory, "npm.mjs");
+	const marker = join(directory, "npm-arguments");
+	writeFileSync(fakeNpm, `import { writeFileSync } from "node:fs";\nif (process.argv.slice(2).join(" ") === "config get registry") console.log("https://registry.example.invalid/"); else { writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv.slice(2))); process.exit(7); }\n`);
+	const env = { ...process.env, npm_execpath: fakeNpm };
+	delete env.PI_COMPANY_NPM_REGISTRY;
+	const result = spawnSync(process.execPath, [join(scripts, "build-company-linux.mjs")], { encoding: "utf8", env });
+	assert.notEqual(result.status, 0);
+	const args = JSON.parse(readFileSync(marker, "utf8"));
+	assert.equal(args[0], "ci");
+	assert.ok(args.includes("--registry=https://registry.example.invalid/"));
+});
