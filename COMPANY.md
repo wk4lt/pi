@@ -30,27 +30,9 @@ npm ci --ignore-scripts
 
 依赖以根目录的 `package-lock.json` 为准。首次安装不执行依赖生命周期脚本。检查命令会自动格式化文件，运行后需要检查 `git diff`。
 
-首次检查或运行前，还需要准备模型目录数据。在外网获取固定 revision，避免使用不断变化的最新目录：
+首次检查或运行前，需要准备被 Git 忽略的模型数据。内网打包命令会从公司 npm 镜像的同版本 `@earendil-works/pi-ai` 包提取并验证，包含 `.manifest.json`；源码单独复制不会带上这些数据。
 
-```bash
-mkdir -p .artifacts/company
-curl -fsSL 'https://pi.dev/api/models/revisions/sha256-7fe1b41feaf43a7aad4bc832e6b306c7ced56e6d41bbc724b74e91eeacff6edf?types=chat,image,classifier' -o .artifacts/company/models.all.json
-sha256sum .artifacts/company/models.all.json
-```
-
-确认 SHA-256 为 `7fe1b41feaf43a7aad4bc832e6b306c7ced56e6d41bbc724b74e91eeacff6edf` 后执行：
-
-```bash
-node packages/ai/scripts/hydrate-model-catalog.ts .artifacts/company/models.all.json
-npm run check:model-data
-npm run check
-./pi-test.sh --version
-./pi-test.sh --help
-```
-
-内网使用已导入且校验通过的 `models.all.json`，跳过下载步骤，再执行相同的数据恢复命令。模型目录数据位于被 Git 忽略的 `packages/ai/src/providers/data/`，只传源码和锁文件不能保证离线构建。
-
-源码调试入口为 `./pi-test.sh`。一键生成安装包执行 `npm run package:linux`，工具自动准备固定输入、检查、编译、打包并验证源码目录外的安装。最新成功结果记录在 `.artifacts/company-linux/latest.json`，包含独立运行时、fd/rg 搜索工具和生产依赖。安装和使用方法见 [中文上手说明](GETTING_STARTED_CN.md#安装到其他目录或内网服务器)。
+源码调试入口为 `./pi-test.sh`。一键生成安装包执行 `npm run package:linux`，使用本机 Node、公司 npm 镜像和模型数据，编译并验证源码目录外的安装。安装包不自带 fd/rg，搜索工具相关限制及构建要求见 [中文上手说明](GETTING_STARTED_CN.md#维护者如何重新构建-linux-安装包)。
 
 完整开发依赖安装存在上游警告：Gondolin 扩展示例要求 Node.js ≥23.6，`autoevals` 声明使用 pnpm，且部分传递依赖已弃用。Node.js 22.19.0 下的基础 CLI 验证不覆盖这些可选开发用途，不通过忽略版本检查或降级依赖来处理警告。
 

@@ -39,7 +39,7 @@ function fixture(t) {
 	chmodSync(join(source, "bin/pi"), 0o755);
 	writeFileSync(
 		join(source, cli),
-		'if(process.argv[2]==="--version") console.log("1.4.0"); else console.log(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),path:process.env.PATH}));\n',
+		'if(process.argv[2]==="--version") console.log("1.4.0"); else console.log(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),path:process.env.PATH,offline:process.env.PI_OFFLINE}));\n',
 	);
 	const files = ["install.sh", "bin/pi", cli];
 	writeFileSync(
@@ -70,7 +70,7 @@ test(
 			env: { ...process.env, PATH: `${f.bin}:/usr/bin:/bin` },
 			encoding: "utf8",
 		});
-		assert.deepEqual(JSON.parse(output), { cwd: f.cwd, args, path: `${f.bin}:/usr/bin:/bin:${f.prefix}/tools` });
+		assert.deepEqual(JSON.parse(output), { cwd: f.cwd, args, path: `${f.bin}:/usr/bin:/bin`, offline: "1" });
 		assert.equal(existsSync(join(f.cwd, "should-not-exist")), false);
 		assert.equal(execFileSync(join(f.bin, "pi"), ["--version"], { cwd: f.cwd, encoding: "utf8" }).trim(), "1.4.0");
 	},
@@ -119,3 +119,18 @@ test(
 		}
 	},
 );
+
+test("rejects a public npm registry before installing dependencies", { skip: process.platform !== "linux" }, (t) => {
+	const directory = mkdtempSync(join(tmpdir(), "pi-registry-check-"));
+	t.after(() => rmSync(directory, { recursive: true, force: true }));
+	const fakeNpm = join(directory, "npm.mjs");
+	const marker = join(directory, "unexpected-install");
+	writeFileSync(fakeNpm, `import { writeFileSync } from "node:fs";\nif (process.argv.slice(2).join(" ") === "config get registry") console.log("https://registry.npmjs.org/"); else writeFileSync(${JSON.stringify(marker)}, "called");\n`);
+	const result = spawnSync(process.execPath, [join(scripts, "build-company-linux.mjs")], {
+		encoding: "utf8",
+		env: { ...process.env, npm_execpath: fakeNpm },
+	});
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /Configure npm registry/);
+	assert.equal(existsSync(marker), false);
+});

@@ -22,7 +22,7 @@ pi 本身不附带可生成回答的模型，需要连接模型服务。仓库�
 - 外网开发验证后，定期将源码、依赖和交付产物导入内网。
 - 后续接入公司 OpenAI 兼容模型服务，再考虑中文界面和公司工作流。
 
-当前已有 Linux x64 离线安装包，包含 Node.js 22.19.0、应用和运行依赖。已验证安装、任意工作目录启动、本地模型接口、文件读写、Bash 命令和会话保存；公司真实模型和原生 Windows 交付尚未验证。
+Linux 安装包包含构建机 Node.js、应用和运行依赖。每次构建后请在目标机器验证安装、文件操作及真实模型连接。
 
 ## 当前这台 Linux 机器直接使用
 
@@ -168,46 +168,19 @@ pi -p "用中文说明这个仓库如何运行测试，先不要修改文件。"
 npm run package:linux
 ```
 
-启动工具需要 Node.js 18+ 和 npm，以及 curl、tar、Bash、GNU coreutils。工具自动获取固定的 Node.js 22.19.0，在该运行时下完成后续工作，因此不用先切换系统 Node。
+构建机需要 Linux、Node.js >=22.19.0、npm、tar、Bash 和 GNU coreutils，并将 npm registry 配置到公司 HTTPS 镜像，并将 `PI_COMPANY_NPM_REGISTRY` 设置为同一镜像地址。Node 和目标机器必须架构、动态库兼容。若自动定位不到 Node 许可文件，请设置 `PI_NODE_LICENSE_FILE` 指向该 Node 的许可文件。
 
-流程自动完成：
+脚本使用公司镜像安装锁定依赖，从镜像获取源码同版本的 `@earendil-works/pi-ai` 包并提取包含 `.manifest.json` 的模型数据，校验后离线编译，再生成自带 Node 的安装包。安装器及本地模拟模型冒烟测试通过后更新 `.artifacts/company-linux/latest.json`。包不含 fd 和 rg：缺失时其专用工具不可用，Bash 可使用系统 find、grep 或 git grep。
 
-1. 下载并校验固定版本的 Node、fd、rg 和模型目录，已有正确缓存直接复用。
-2. 按锁文件安装开发依赖，恢复模型目录，运行完整检查及安装器、下载缓存测试。
-3. 清理工作区生成文件，重新编译当前源码，避免删除源文件后遗留旧构建文件。
-4. 按安装锁准备生产依赖，生成包含运行时和工具的离线包及 SHA-256 文件。
-5. 在源码目录外解压安装，使用本地模拟模型验证文件读写、命令执行、流式响应和会话保存。
+该命令不调用 nodejs.org、GitHub 或 pi.dev。构建前需由维护人员确认环境变量中的地址是公司授权的内网镜像；构建机网络策略仍需限制镜像重定向及其他进程的外网访问，脚本本身不是网络隔离机制。模型包依赖镜像提供源码版本的数据；生成清单中的文件哈希和结构会在构建时验证。
 
-成功后终端输出安装包路径，并更新 `.artifacts/company-linux/latest.json`。默认每次生成一个独立的 `build-*` 目录，保留旧包；失败时不更新 latest，也不安装或替换日常使用的 `pi`。可指定一个尚不存在的输出目录：
+成功产物放在 `.artifacts/company-linux/` 的独立目录中，也可指定一个不存在的输出目录：
 
 ```bash
 npm run package:linux -- --out /path/to/new-output-directory
 ```
 
-首次构建需要访问 Node.js、GitHub、pi.dev 和 npm 镜像；归档和模型目录缓存于 `.artifacts/company-cache/`，每次复用前仍校验哈希。npm 缓存遵循当前 npm 配置。后续使用已缓存包优先，缺少依赖时仍需连接镜像。内网使用时，需要导入这些缓存或确保构建源可访问；目标机器安装生成包无需联网。
-
-固定下载地址与 SHA-256 在 `scripts/company-linux/assets.json`，模型目录 revision 在 `nix/model-catalog.json`。需要更新运行时或搜索工具时，审查并同步修改版本和校验值，不能只改 `.node-version`。
-
-工具阻止同一仓库并发构建。如果构建进程被强制终止而留下 `.artifacts/company-build.lock`，先确认其中 `pid` 对应的构建已经退出，再移除该锁目录重试。
-
-在相同架构的 Linux 上构建对应的包；本次验证环境为 x64。ARM64 下载信息已固定，仍需 ARM64 实机验证。完整检查可能按仓库既定规则自动格式化源码，构建后检查 `git diff`。
-
-手动诊断时仍可分步构建，低层打包器保留：
-
-```bash
-npm run build:offline
-node scripts/package-company-linux.mjs --runtime /path/to/node-v22.19.0-linux-x64 --tools /path/to/company-tools --out /path/to/new-output-directory
-```
-
-这两个分步命令需要事先准备 Node、包含许可文件的 fd/rg 目录、开发依赖和模型目录。独立验证命令：
-
-```bash
-node --test scripts/company-linux.test.mjs
-node --test scripts/company-linux-assets.test.mjs
-node scripts/smoke-company-linux.mjs --command /path/to/installed/bin/pi
-```
-
-模拟接口验证不使用真实模型密钥或额度，不能代替公司真实模型兼容性验证。
+发生异常退出时，若留下 `.artifacts/company-build.lock`，确认该目录内记录的构建进程已退出后再移除。正式交付前，需在目标机器验证动态库、真实公司模型、文件操作和会话；本地模拟测试不能替代真实模型联调。
 
 源码调试仍使用：
 

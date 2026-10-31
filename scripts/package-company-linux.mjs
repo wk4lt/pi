@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Package the built company CLI with a pinned Node runtime and installed production dependencies.
+// Package the built company CLI with the local Node runtime and production dependencies.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -11,48 +11,30 @@ import { produceArtifactSet } from "./package-artifacts.mjs";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { values } = parseArgs({
 	options: {
-		runtime: { type: "string" },
-		tools: { type: "string" },
+		node: { type: "string" },
+		npm: { type: "string" },
 		out: { type: "string", default: join(repoRoot, ".artifacts/company-linux") },
 		help: { type: "boolean" },
 	},
 });
 if (values.help) {
 	console.log(
-		"Usage: node scripts/package-company-linux.mjs --runtime <Node 22.19.0 directory> --tools <fd/rg directory with licenses> [--out <new directory>]\nRun npm run build:offline first. Builds a Linux package for the current architecture.",
+		"Usage: node scripts/package-company-linux.mjs --node <Node binary> --npm <npm-cli.js> [--out <new directory>]\nRun npm run build:offline first. Builds a Linux package for the current architecture.",
 	);
 	process.exit(0);
 }
 if (process.platform !== "linux" || !["x64", "arm64"].includes(process.arch)) {
 	throw new Error("Build on Linux x64 or arm64 for the same target architecture.");
 }
-if (!values.runtime) throw new Error("--runtime is required");
-if (!values.tools) throw new Error("--tools is required");
-
-const tools = resolve(values.tools);
-const toolVersions = {};
-for (const [tool, expected] of [
-	["fd", "fd 10.3.0"],
-	["rg", "ripgrep 14.1.1 (rev 4649aa9700)"],
-]) {
-	const version = execFileSync(join(tools, tool), ["--version"], { encoding: "utf8" }).split("\n")[0];
-	if (version !== expected) throw new Error(`Expected ${expected}, got ${version}`);
-	toolVersions[tool] = version;
-}
-
-const runtime = resolve(values.runtime);
-const node = join(runtime, "bin/node");
-const expectedNode = readFileSync(join(repoRoot, ".node-version"), "utf8").trim();
-if (process.versions.node !== expectedNode) throw new Error(`Run the packager with Node ${expectedNode}.`);
+if (!values.node || !values.npm) throw new Error("--node and --npm are required");
+const node = resolve(values.node);
+const npm = resolve(values.npm);
 const runtimeInfo = JSON.parse(
-	execFileSync(
-		node,
-		["-p", "JSON.stringify({version:process.versions.node,platform:process.platform,arch:process.arch})"],
-		{ encoding: "utf8" },
-	),
+	execFileSync(node, ["-p", "JSON.stringify({version:process.versions.node,platform:process.platform,arch:process.arch})"], { encoding: "utf8" }),
 );
-if (runtimeInfo.version !== expectedNode || runtimeInfo.platform !== "linux" || runtimeInfo.arch !== process.arch) {
-	throw new Error(`Expected Linux ${process.arch} Node ${expectedNode}, got ${JSON.stringify(runtimeInfo)}`);
+const [major, minor] = runtimeInfo.version.split(".").map(Number);
+if (runtimeInfo.version !== process.versions.node || runtimeInfo.platform !== "linux" || runtimeInfo.arch !== process.arch || major < 22 || (major === 22 && minor < 19)) {
+	throw new Error(`Expected Linux ${process.arch} Node >=22.19.0 matching the build Node, got ${JSON.stringify(runtimeInfo)}`);
 }
 if (!existsSync(join(repoRoot, "packages/coding-agent/dist/bundle/cli.js"))) {
 	throw new Error("Build output is missing. Run npm run build:offline first.");
@@ -61,7 +43,7 @@ const output = resolve(values.out);
 if (existsSync(output)) throw new Error(`Output already exists; choose a new --out directory: ${output}`);
 mkdirSync(output, { recursive: true });
 
-const env = { ...process.env, PATH: `${join(runtime, "bin")}:${process.env.PATH ?? ""}` };
+const env = { ...process.env };
 const artifacts = produceArtifactSet({ repoRoot, outDir: join(output, "packages"), build: false });
 const installLockDir = join(repoRoot, "packages/coding-agent/install-lock");
 const manifest = JSON.parse(readFileSync(join(installLockDir, "package.json"), "utf8"));
@@ -86,7 +68,7 @@ writeFileSync(join(app, "package-lock.json"), `${JSON.stringify(lock, null, "\t"
 execFileSync(
 	node,
 	[
-		join(runtime, "lib/node_modules/npm/bin/npm-cli.js"),
+		npm,
 		"ci",
 		"--ignore-scripts",
 		"--omit=dev",
@@ -100,8 +82,12 @@ execFileSync(
 	},
 );
 
-cpSync(runtime, join(payload, "runtime"), { recursive: true });
-cpSync(tools, join(payload, "tools"), { recursive: true });
+mkdirSync(join(payload, "runtime/bin"), { recursive: true });
+cpSync(node, join(payload, "runtime/bin/node"));
+const licenseCandidates = [process.env.PI_NODE_LICENSE_FILE, join(dirname(dirname(node)), "LICENSE"), join(dirname(dirname(node)), "share/doc/nodejs/copyright")].filter(Boolean);
+const nodeLicense = licenseCandidates.find((path) => existsSync(path));
+if (!nodeLicense) throw new Error("Node license not found. Set PI_NODE_LICENSE_FILE to the license for the build Node.");
+cpSync(nodeLicense, join(payload, "runtime/NODE-LICENSE.txt"));
 mkdirSync(join(payload, "bin"));
 cpSync(join(repoRoot, "scripts/company-linux/pi"), join(payload, "bin/pi"));
 cpSync(join(repoRoot, "scripts/company-linux/install.sh"), join(payload, "install.sh"));
@@ -115,10 +101,10 @@ writeFileSync(
 			version: manifest.version,
 			platform: "linux",
 			arch: process.arch,
-			node: expectedNode,
-			tools: toolVersions,
+			node: runtimeInfo.version,
+			tools: "system",
 			source: artifacts.source,
-			modelCatalog: JSON.parse(readFileSync(join(repoRoot, "nix/model-catalog.json"), "utf8")).revision,
+			modelData: { package: "@earendil-works/pi-ai", version: JSON.parse(readFileSync(join(repoRoot, "packages/ai/package.json"), "utf8")).version, manifestSha256: createHash("sha256").update(readFileSync(join(repoRoot, "packages/ai/src/providers/data/.manifest.json"))).digest("hex") },
 		},
 		null,
 		"\t",
