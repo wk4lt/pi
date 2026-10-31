@@ -168,11 +168,11 @@ pi -p "用中文说明这个仓库如何运行测试，先不要修改文件。"
 npm run package:linux
 ```
 
-构建机需要 Linux、Node.js >=22.19.0、npm、tar、Bash 和 GNU coreutils，并将 npm registry 配置到公司 HTTPS 镜像，并将 `PI_COMPANY_NPM_REGISTRY` 设置为同一镜像地址。Node 和目标机器必须架构、动态库兼容。若自动定位不到 Node 许可文件，请设置 `PI_NODE_LICENSE_FILE` 指向该 Node 的许可文件。
+构建机需要 Linux、Node.js >=22.19.0、npm、tar、Bash 和 GNU coreutils，并将 npm registry 配置到公司 HTTPS 镜像。脚本通过 `npm config get registry` 自动读取地址。Node 和目标机器必须架构、动态库兼容。若自动定位不到 Node 许可文件，请设置 `PI_NODE_LICENSE_FILE` 指向该 Node 的许可文件。
 
 脚本使用公司镜像安装锁定依赖，从镜像获取源码同版本的 `@earendil-works/pi-ai` 包并提取包含 `.manifest.json` 的模型数据，校验后离线编译，再生成自带 Node 的安装包。安装器及本地模拟模型冒烟测试通过后更新 `.artifacts/company-linux/latest.json`。包不含 fd 和 rg：缺失时其专用工具不可用，Bash 可使用系统 find、grep 或 git grep。
 
-该命令不调用 nodejs.org、GitHub 或 pi.dev。构建前需由维护人员确认环境变量中的地址是公司授权的内网镜像；构建机网络策略仍需限制镜像重定向及其他进程的外网访问，脚本本身不是网络隔离机制。模型包依赖镜像提供源码版本的数据；生成清单中的文件哈希和结构会在构建时验证。
+该命令不调用 nodejs.org、GitHub 或 pi.dev。构建前需由维护人员确认 npm 当前配置的地址是公司授权的内网镜像；构建机网络策略仍需限制镜像重定向及其他进程的外网访问，脚本本身不是网络隔离机制。模型包依赖镜像提供源码版本的数据；生成清单中的文件哈希和结构会在构建时验证。
 
 成功产物放在 `.artifacts/company-linux/` 的独立目录中，也可指定一个不存在的输出目录：
 
