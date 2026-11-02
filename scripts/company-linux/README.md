@@ -40,6 +40,8 @@ pi
 
 启动器使用安装包自带的 Node，并设置 `PI_OFFLINE=1`，关闭启动时联网和缺少搜索工具时的自动下载。项目构建命令仍使用用户配置的工具链。`find` 和 `grep` 专用工具分别需要系统提供 fd（或 fdfind）和 rg；没有时可通过 Bash 使用系统 find、grep 或 git grep，但行为并不完全相同。
 
+可以通过配置的公司 HTTPS npm 镜像主动安装插件，例如 `pi install npm:pi-hermes-memory`。目标机器需要 npm 11.9.0 或更高版本；安装时不执行插件安装脚本，需要原生模块的插件可能需要另外准备依赖。也可以通过 `pi install /绝对路径/插件目录` 加载本地插件。
+
 ```bash
 pi --continue
 pi -p "用中文解释项目结构，先不要修改文件。"

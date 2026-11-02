@@ -48,6 +48,7 @@ import {
 	resolvePath,
 } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
+import { withRegistryProxy } from "./internal-npm-proxy.ts";
 import { isStdoutTakenOver } from "./output-guard.ts";
 import { type PiManifest, readPiManifest } from "./pi-manifest.ts";
 import type { PackageSource, SettingsManager } from "./settings-manager.ts";
@@ -1041,7 +1042,7 @@ export class DefaultPackageManager implements PackageManager {
 
 	async install(source: string, options?: { local?: boolean }): Promise<void> {
 		const parsed = this.parseSource(source);
-		if (isOfflineModeEnabled() && parsed.type !== "local") {
+		if (isOfflineModeEnabled() && parsed.type === "git") {
 			throw new Error("Network package installation is disabled in offline mode. Use a local path instead.");
 		}
 		const scope: SourceScope = options?.local ? "project" : "user";
@@ -1822,7 +1823,7 @@ export class DefaultPackageManager implements PackageManager {
 		return wrappedPackageManagers[0] ?? directCommand;
 	}
 
-	private async runNpmCommand(args: string[], options?: { cwd?: string }): Promise<void> {
+	private async runNpmCommand(args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<void> {
 		const npmCommand = this.getNpmCommand();
 		await this.runCommand(npmCommand.command, [...npmCommand.args, ...args], options);
 	}
@@ -1876,8 +1877,84 @@ export class DefaultPackageManager implements PackageManager {
 
 	private async installNpm(source: NpmSource, scope: SourceScope, temporary: boolean): Promise<void> {
 		const installRoot = this.getNpmInstallRoot(scope, temporary);
+		if (isOfflineModeEnabled()) {
+			await this.installInternalNpm(source, installRoot);
+			return;
+		}
 		this.ensureNpmProject(installRoot);
 		await this.runNpmCommand(this.getNpmInstallArgs([source.spec], installRoot));
+	}
+
+	private async installInternalNpm(source: NpmSource, installRoot: string): Promise<void> {
+		const npm = this.getNpmCommand();
+		if (this.getPackageManagerName() !== "npm" || npm.args.length !== 0 || basename(npm.command) !== "npm") {
+			throw new Error("Internal package installation requires npm 11.9 or newer without a custom wrapper.");
+		}
+		const version = await this.runCommandCapture(npm.command, ["--version"], { timeoutMs: NETWORK_TIMEOUT_MS });
+		if (!satisfies(version, ">=11.9.0")) throw new Error("Internal package installation requires npm 11.9 or newer.");
+		const rawConfig = await this.runCommandCapture(npm.command, ["config", "list", "--json"], {
+			cwd: this.cwd,
+			timeoutMs: NETWORK_TIMEOUT_MS,
+		});
+		const config: Record<string, unknown> = JSON.parse(rawConfig);
+		let registry: URL;
+		try {
+			registry = new URL(String(config.registry));
+		} catch {
+			throw new Error("Configure an internal HTTPS npm registry first.");
+		}
+		if (
+			registry.protocol !== "https:" ||
+			registry.hostname === "registry.npmjs.org" ||
+			registry.username ||
+			registry.password ||
+			registry.search ||
+			registry.hash
+		) {
+			throw new Error("Configure an internal HTTPS npm registry first.");
+		}
+		const proxyValue = config["https-proxy"] || config.proxy;
+		let upstream: URL | undefined;
+		if (typeof proxyValue === "string" && proxyValue) {
+			try {
+				upstream = new URL(proxyValue);
+			} catch {
+				throw new Error("Invalid npm proxy configuration.");
+			}
+		}
+		const scopeArgs = Object.keys(config)
+			.filter((key) => /^@[^/]+:registry$/.test(key))
+			.map((key) => `--${key}=${registry}`);
+		await withRegistryProxy(registry, upstream, async (proxy) => {
+			this.ensureNpmProject(installRoot);
+			await this.runNpmCommand(
+				[
+					...this.getNpmInstallArgs([source.spec], installRoot),
+					`--registry=${registry}`,
+					...scopeArgs,
+					`--proxy=${proxy}`,
+					`--https-proxy=${proxy}`,
+					"--noproxy=",
+					"--allow-git=none",
+					"--ignore-scripts",
+					"--no-audit",
+					"--no-fund",
+					"--replace-registry-host=always",
+				],
+				{
+					cwd: this.cwd,
+					env: {
+						NO_PROXY: "",
+						no_proxy: "",
+						NOPROXY: "",
+						noproxy: "",
+						npm_config_noproxy: "",
+						NPM_CONFIG_NOPROXY: "",
+						NODE_USE_ENV_PROXY: "0",
+					},
+				},
+			);
+		});
 	}
 
 	private async uninstallNpm(source: NpmSource, scope: SourceScope): Promise<void> {
@@ -1886,6 +1963,9 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 		const packageManagerName = this.getPackageManagerName();
+		if (isOfflineModeEnabled() && packageManagerName !== "npm") {
+			throw new Error("Internal package removal requires npm.");
+		}
 		if (packageManagerName === "bun") {
 			await this.runNpmCommand(["uninstall", source.name, "--cwd", installRoot]);
 			return;
@@ -1893,6 +1973,9 @@ export class DefaultPackageManager implements PackageManager {
 		const args = ["uninstall", source.name, "--prefix", installRoot];
 		if (packageManagerName !== "pnpm") {
 			args.push("--legacy-peer-deps");
+		}
+		if (isOfflineModeEnabled()) {
+			args.push("--offline", "--ignore-scripts", "--no-audit", "--no-fund");
 		}
 		await this.runNpmCommand(args);
 	}
@@ -2671,8 +2754,12 @@ export class DefaultPackageManager implements PackageManager {
 		};
 	}
 
-	private spawnCommand(command: string, args: string[], options?: { cwd?: string }): ChildProcess {
-		const env = getEnv();
+	private spawnCommand(
+		command: string,
+		args: string[],
+		options?: { cwd?: string; env?: NodeJS.ProcessEnv },
+	): ChildProcess {
+		const env = { ...getEnv(), ...options?.env };
 		return spawnProcess(command, args, {
 			cwd: options?.cwd,
 			stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
@@ -2738,7 +2825,11 @@ export class DefaultPackageManager implements PackageManager {
 		});
 	}
 
-	private runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void> {
+	private runCommand(
+		command: string,
+		args: string[],
+		options?: { cwd?: string; env?: NodeJS.ProcessEnv },
+	): Promise<void> {
 		return new Promise((resolvePromise, reject) => {
 			const child = this.spawnCommand(command, args, options);
 			child.on("error", reject);
