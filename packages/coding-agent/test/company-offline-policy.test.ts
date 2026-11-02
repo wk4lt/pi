@@ -137,7 +137,7 @@ describe("company CLI offline policy", () => {
 		}
 	});
 
-	it("blocks online package installs while allowing local extension paths", async () => {
+	it("rejects the public npm registry and git while allowing local extension paths", async () => {
 		vi.stubEnv("PI_OFFLINE", "1");
 		const directory = mkdtempSync(join(tmpdir(), "pi-offline-policy-"));
 		try {
@@ -146,11 +146,55 @@ describe("company CLI offline policy", () => {
 				agentDir: directory,
 				settingsManager: SettingsManager.inMemory(),
 			});
-			await expect(manager.install("npm:example")).rejects.toThrow("Network package installation is disabled");
+			vi.spyOn(manager as unknown as { runCommandCapture: () => Promise<string> }, "runCommandCapture")
+				.mockResolvedValueOnce("11.9.0")
+				.mockResolvedValueOnce(JSON.stringify({ registry: "https://registry.npmjs.org/" }));
+			await expect(manager.install("npm:example")).rejects.toThrow("internal HTTPS npm registry");
 			await expect(manager.install("git:https://example.invalid/team/repo.git")).rejects.toThrow(
 				"Network package installation is disabled",
 			);
 			await expect(manager.install(directory)).resolves.toBeUndefined();
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("installs an npm package through the configured mirror with scripts and git disabled", async () => {
+		vi.stubEnv("PI_OFFLINE", "1");
+		const directory = mkdtempSync(join(tmpdir(), "pi-internal-npm-"));
+		try {
+			const manager = new DefaultPackageManager({
+				cwd: directory,
+				agentDir: directory,
+				settingsManager: SettingsManager.inMemory(),
+			});
+			const internals = manager as unknown as {
+				runCommandCapture: () => Promise<string>;
+				runCommand: (command: string, args: string[], options?: unknown) => Promise<void>;
+			};
+			vi.spyOn(internals, "runCommandCapture")
+				.mockResolvedValueOnce("11.9.0")
+				.mockResolvedValueOnce(
+					JSON.stringify({
+						registry: "https://mirror.example.invalid/",
+						"@test:registry": "https://other.invalid/",
+					}),
+				);
+			const run = vi.spyOn(internals, "runCommand").mockResolvedValue(undefined);
+			await manager.install("npm:example");
+			expect(run).toHaveBeenCalledWith(
+				"npm",
+				expect.arrayContaining([
+					"--registry=https://mirror.example.invalid/",
+					"--@test:registry=https://mirror.example.invalid/",
+					"--allow-git=none",
+					"--ignore-scripts",
+					"--no-audit",
+					"--no-fund",
+					"--noproxy=",
+				]),
+				expect.objectContaining({ env: expect.objectContaining({ NO_PROXY: "", no_proxy: "" }) }),
+			);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

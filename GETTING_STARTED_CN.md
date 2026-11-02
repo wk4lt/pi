@@ -77,6 +77,18 @@ pi -p "解释项目结构，先不要修改文件。"
 
 用户配置和会话默认位于 `~/.pi/agent/`。安装包不会自动下载搜索工具；`find` 和 `grep` 工具分别需要系统提供 fd（或 fdfind）和 rg。没有它们时，可在 Bash 中使用系统的 `find`、`grep` 或 `git grep`，具体行为可能不同。
 
+## 安装插件
+
+在目标机器准备 npm 11.9.0 或更高版本，将 npm 的 registry 配置为可用的公司 HTTPS 镜像，然后执行：
+
+```bash
+npm config get registry
+pi install npm:pi-hermes-memory
+pi list
+```
+
+请确认配置的地址是公司批准的镜像，程序无法自动识别所有公网镜像。安装通过本地代理限制 npm 连接到配置的镜像地址；镜像需要包含插件和它的依赖。企业网络策略仍是网络访问的最终约束。安装时不会执行依赖的安装脚本；需要原生模块的插件可能还需要为目标机器和 Pi 使用的 Node 版本单独准备依赖。Pi 安装包不包含 npm，插件实际能否运行取决于其兼容性和依赖。也可以使用 `pi install /绝对路径/插件目录` 加载已经准备好的本地插件。
+
 ## 构建安装包
 
 构建机需要 Linux x64 或 arm64、Node.js 22.19.0 或更高版本、npm、tar、Bash 和 GNU coreutils，以及可访问的内网 HTTPS npm 镜像。先检查 npm 的 registry，再在源码根目录执行：
