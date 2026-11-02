@@ -108,7 +108,10 @@ async function promptForOptions(
 	context: BugReportContext,
 	initialHint: string | undefined,
 ): Promise<BugReportOptions | undefined> {
-	const hint = await input(context, "Report a bug", `${DISCLAIMER}\n\nWhat went wrong? (optional)`, initialHint);
+	const intro = process.env.PI_OFFLINE
+		? "A diagnostic report can be exported locally. Review its contents before sharing it."
+		: DISCLAIMER;
+	const hint = await input(context, "Report a bug", `${intro}\n\nWhat went wrong? (optional)`, initialHint);
 	if (hint === null) return undefined;
 	const transcript = await choose(
 		context,
@@ -131,11 +134,12 @@ async function promptForOptions(
 		includeSummary = summary !== "No";
 	}
 	const description = hint.trim();
+	const offline = Boolean(process.env.PI_OFFLINE);
 	const delivery = await choose(
 		context,
 		"Bug report",
-		["Upload Report", "Export as Zip", "Cancel"],
-		`Description: ${description || "none"}\nTranscript: ${includeSession ? "included" : "not included"}\nSummary: ${includeSummary ? `written by ${context.session.model?.name ?? "the current model"}` : "none"}\n\nUpload sends the report to ${new URL(getRadiusGatewayUrl()).host}. Export writes a zip archive to the current directory instead.`,
+		offline ? ["Export as Zip", "Cancel"] : ["Upload Report", "Export as Zip", "Cancel"],
+		`Description: ${description || "none"}\nTranscript: ${includeSession ? "included" : "not included"}\nSummary: ${includeSummary ? `written by ${context.session.model?.name ?? "the current model"}` : "none"}\n\n${offline ? "Export writes a zip archive to the current directory." : `Upload sends the report to ${new URL(getRadiusGatewayUrl()).host}. Export writes a zip archive to the current directory instead.`}`,
 	);
 	if (!delivery || delivery === "Cancel") return undefined;
 	return {

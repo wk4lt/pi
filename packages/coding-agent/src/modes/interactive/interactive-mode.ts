@@ -76,6 +76,7 @@ import {
 	detectCacheMiss,
 } from "../../core/cache-stats.ts";
 import { formatCacheWarmingStatus, formatCacheWarmingUsage } from "../../core/cache-warmer.ts";
+import { saveCompanyGateway } from "../../core/company-gateway.ts";
 import { findExtensionStackMatches, recordCrash, takeUnnotifiedCrash } from "../../core/crash-log.ts";
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "../../core/defaults.ts";
 import type {
@@ -157,7 +158,6 @@ import { ModelSelectorComponent } from "./components/model-selector.ts";
 import {
 	type AuthSelectorProvider,
 	formatAuthSelectorProviderStatus,
-	formatAuthSelectorProviderType,
 	OAuthSelectorComponent,
 } from "./components/oauth-selector.ts";
 import { piLogoLines, piWordmark, supportsPiLogo } from "./components/pi-logo.ts";
@@ -363,16 +363,7 @@ function llamaCppPostLoginGuidance(actionLabel: string, loadedModelCount: number
 		: `${actionLabel}. Use /model to select a loaded llama.cpp model, or /llama to manage models.`;
 }
 
-type LoginProviderCompletionOption = {
-	id: string;
-	name: string;
-	authTypes: AuthSelectorProvider["authType"][];
-	subscription?: boolean;
-};
-
 const RADIUS_LOGIN_INTRO = "Radius is a service crafted for Pi by the builders of Pi, Earendil Works";
-
-const AUTH_TYPE_ORDER = { oauth: 0, api_key: 1 } satisfies Record<AuthSelectorProvider["authType"], number>;
 
 function createFuzzyAutocompleteItems<T>(
 	items: T[],
@@ -383,43 +374,6 @@ function createFuzzyAutocompleteItems<T>(
 	const filtered = fuzzyFilter(items, prefix, getSearchText);
 	if (filtered.length === 0) return null;
 	return filtered.map(toAutocompleteItem);
-}
-
-function getLoginProviderCompletionOptions(
-	providerOptions: readonly AuthSelectorProvider[],
-): LoginProviderCompletionOption[] {
-	const byId = new Map<string, LoginProviderCompletionOption>();
-	for (const provider of providerOptions) {
-		const existing = byId.get(provider.id);
-		if (existing) {
-			if (!existing.authTypes.includes(provider.authType)) {
-				existing.authTypes.push(provider.authType);
-				existing.authTypes.sort((a, b) => AUTH_TYPE_ORDER[a] - AUTH_TYPE_ORDER[b]);
-			}
-			continue;
-		}
-		byId.set(provider.id, {
-			id: provider.id,
-			name: provider.name,
-			authTypes: [provider.authType],
-			subscription: provider.subscription,
-		});
-	}
-	return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function getLoginProviderSearchText(provider: LoginProviderCompletionOption): string {
-	const authTypes = provider.authTypes
-		.map((authType) => `${authType} ${formatAuthSelectorProviderType(authType, provider.subscription)}`)
-		.join(" ");
-	return `${provider.id} ${provider.name} ${authTypes}`;
-}
-
-function formatLoginProviderCompletionDescription(provider: LoginProviderCompletionOption): string {
-	const authTypes = provider.authTypes
-		.map((authType) => formatAuthSelectorProviderType(authType, provider.subscription))
-		.join("/");
-	return provider.name === provider.id ? authTypes : `${provider.name} · ${authTypes}`;
 }
 
 /**
@@ -770,18 +724,6 @@ export class InteractiveMode {
 						label: level,
 					}),
 				);
-			};
-		}
-
-		const loginCommand = slashCommands.find((command) => command.name === "login");
-		if (loginCommand) {
-			loginCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
-				const providers = getLoginProviderCompletionOptions(this.getLoginProviderOptions());
-				return createFuzzyAutocompleteItems(providers, prefix, getLoginProviderSearchText, (provider) => ({
-					value: provider.id,
-					label: provider.id,
-					description: formatLoginProviderCompletionDescription(provider),
-				}));
 			};
 		}
 
@@ -5808,40 +5750,55 @@ export class InteractiveMode {
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 
-	private findLoginProviderOptions(providerRef: string): AuthSelectorProvider[] {
-		const normalizedProviderRef = providerRef.trim().toLowerCase();
-		if (!normalizedProviderRef) {
-			return [];
-		}
-
-		return this.getLoginProviderOptions().filter(
-			(provider) =>
-				provider.id.toLowerCase() === normalizedProviderRef ||
-				provider.name.toLowerCase() === normalizedProviderRef,
-		);
-	}
-
-	private async handleLoginCommand(providerRef?: string): Promise<void> {
-		if (!providerRef) {
-			this.showLoginAuthTypeSelector();
-			return;
-		}
-
-		const providerOptions = this.findLoginProviderOptions(providerRef);
-		if (providerOptions.length === 1) {
-			await this.startProviderLogin(providerOptions[0]!);
-			return;
-		}
-
-		if (providerOptions.length > 1) {
-			const providerIds = new Set(providerOptions.map((provider) => provider.id));
-			if (providerIds.size === 1) {
-				this.showLoginAuthTypeSelector(providerOptions);
-				return;
+	private async handleLoginCommand(_providerRef?: string): Promise<void> {
+		const restoreEditor = () => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+			this.ui.requestRender();
+		};
+		const showDialog = (secret = false) => {
+			const dialog = new LoginDialogComponent(
+				this.ui,
+				"company",
+				restoreEditor,
+				undefined,
+				"配置内网模型网关",
+				secret,
+			);
+			this.editorContainer.clear();
+			this.editorContainer.addChild(dialog);
+			this.ui.setFocus(dialog);
+			this.ui.requestRender();
+			return dialog;
+		};
+		try {
+			const dialog = showDialog();
+			const baseUrl = await dialog.showPrompt("网关基础地址（例如以 /v1 结尾）");
+			const modelId = await dialog.showPrompt("模型名称（网关要求的 model ID）");
+			const secretDialog = showDialog(true);
+			const apiKey = await secretDialog.showPrompt("API Key（输入内容不会显示）");
+			if (secretDialog.signal.aborted) return;
+			const providerId = await saveCompanyGateway(baseUrl, modelId, apiKey);
+			const refreshed = await this.session.modelRuntime.refresh({ providers: [providerId], allowNetwork: false });
+			const error = refreshed.errors.get(providerId);
+			if (error) throw error;
+			const model = this.session.modelRuntime.getModel(providerId, modelId.trim());
+			if (!model) throw new Error("配置已保存，但模型加载失败。请检查 models.json。");
+			await this.session.setModel(model, { persist: true });
+			await this.updateAvailableProviderCount();
+			this.footer.invalidate();
+			this.updateEditorBorderColor();
+			this.showStatus(
+				"网关配置已保存，模型已选择。上下文和输出上限默认为 128000/16384，可在 models.json 中按实际限制调整。",
+			);
+		} catch (error) {
+			if (!(error instanceof Error && error.message === "Login cancelled")) {
+				this.showError(`配置网关失败：${error instanceof Error ? error.message : String(error)}`);
 			}
+		} finally {
+			restoreEditor();
 		}
-
-		this.showLoginProviderSelector(undefined, providerRef);
 	}
 
 	/** `onBack` reopens the selector the login was started from when the user cancels it. */

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { readFileSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const childProcessMocks = vi.hoisted(() => ({
 	spawn: vi.fn(),
@@ -23,7 +23,11 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 
 describe("shareSession", () => {
 	beforeAll(() => initTheme("dark"));
-	beforeEach(() => vi.clearAllMocks());
+	beforeEach(() => {
+		vi.stubEnv("PI_OFFLINE", "");
+		vi.clearAllMocks();
+	});
+	afterEach(() => vi.unstubAllEnvs());
 
 	it("keeps concurrent session exports isolated", async () => {
 		const uploads: string[] = [];
