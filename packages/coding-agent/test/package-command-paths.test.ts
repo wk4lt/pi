@@ -135,6 +135,9 @@ if (process.platform !== "win32") fs.chmodSync(piPath, 0o755);
 	}
 
 	beforeEach(() => {
+		vi.stubEnv("PI_OFFLINE", "");
+		vi.stubEnv("PI_SKIP_VERSION_CHECK", "");
+		vi.stubEnv("PI_TELEMETRY", "");
 		allowNetwork();
 		tempDir = join(tmpdir(), `pi-package-commands-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		agentDir = join(tempDir, "agent");
@@ -363,13 +366,13 @@ if (process.platform !== "win32") fs.chmodSync(piPath, 0o755);
 
 			expect(projectTrustCalled).toBe(false);
 			expect(existsSync(recordPath)).toBe(false);
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(1);
 		} finally {
 			logSpy.mockRestore();
 		}
 	});
 
-	it("uses saved project trust during update", async () => {
+	it("blocks extension updates even when the project is trusted", async () => {
 		mkdirSync(join(projectDir, ".pi"), { recursive: true });
 		const fakeNpmPath = join(tempDir, "fake-trusted-project-npm.cjs");
 		const recordPath = join(tempDir, "trusted-project-update.json");
@@ -387,8 +390,8 @@ if (process.platform !== "win32") fs.chmodSync(piPath, 0o755);
 		try {
 			await expect(main(["update", "--extensions"])).resolves.toBeUndefined();
 
-			expect(existsSync(recordPath)).toBe(true);
-			expect(process.exitCode).toBeUndefined();
+			expect(existsSync(recordPath)).toBe(false);
+			expect(process.exitCode).toBe(1);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -1050,7 +1053,7 @@ if(args.includes("install")) process.exit(23);
 		}
 	});
 
-	it("suggests the configured source when update input omits the npm prefix", async () => {
+	it("blocks update commands before resolving the package source", async () => {
 		const settingsPath = join(agentDir, "settings.json");
 		writeFileSync(settingsPath, JSON.stringify({ packages: ["npm:pi-formatter"] }, null, 2));
 
@@ -1062,7 +1065,7 @@ if(args.includes("install")) process.exit(23);
 
 			const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stderr).toContain("Did you mean npm:pi-formatter?");
+			expect(stderr).toContain("Online updates are disabled");
 			expect(stdout).not.toContain("Updated pi-formatter");
 			expect(process.exitCode).toBe(1);
 

@@ -576,11 +576,11 @@ export async function main(args: string[], options?: MainOptions) {
 	// Commands and startup selectors can load user-authored themes before runtime creation.
 	setThemeJsonValidator(validateThemeJson);
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
-	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
-	if (offlineMode) {
-		process.env.PI_OFFLINE = "1";
-		process.env.PI_SKIP_VERSION_CHECK = "1";
-	}
+	// Company CLI: suppress automatic external services while allowing configured gateways and MCP.
+	const offlineMode = true;
+	process.env.PI_OFFLINE = "1";
+	process.env.PI_SKIP_VERSION_CHECK = "1";
+	process.env.PI_TELEMETRY = "0";
 
 	if (await runAuthCommand(args)) {
 		return;

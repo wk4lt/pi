@@ -1041,6 +1041,9 @@ export class DefaultPackageManager implements PackageManager {
 
 	async install(source: string, options?: { local?: boolean }): Promise<void> {
 		const parsed = this.parseSource(source);
+		if (isOfflineModeEnabled() && parsed.type !== "local") {
+			throw new Error("Network package installation is disabled in offline mode. Use a local path instead.");
+		}
 		const scope: SourceScope = options?.local ? "project" : "user";
 		this.assertProjectTrustedForScope(scope);
 		await this.withProgress("install", source, `Installing ${source}...`, async () => {
