@@ -121,32 +121,40 @@ test(
 	},
 );
 
-test("rejects a public npm registry before installing dependencies", { skip: process.platform !== "linux" }, (t) => {
+// Run registry checks in an isolated checkout so they also work inside a locked package build.
+function registryFixture(t, registry) {
 	const directory = mkdtempSync(join(tmpdir(), "pi-registry-check-"));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
+	const fixtureScripts = join(directory, "scripts");
+	mkdirSync(fixtureScripts);
+	mkdirSync(join(directory, "packages/coding-agent/install-lock"), { recursive: true });
+	cpSync(join(scripts, "build-company-linux.mjs"), join(fixtureScripts, "build-company-linux.mjs"));
+	writeFileSync(join(fixtureScripts, "release-packages.mjs"), "export function getPublicWorkspacePackages() { return []; }\n");
+	for (const path of ["package-lock.json", "packages/coding-agent/install-lock/package-lock.json"]) {
+		writeFileSync(join(directory, path), JSON.stringify({ packages: {} }));
+	}
 	const fakeNpm = join(directory, "npm.mjs");
-	const marker = join(directory, "unexpected-install");
-	writeFileSync(fakeNpm, `import { writeFileSync } from "node:fs";\nif (process.argv.slice(2).join(" ") === "config get registry") console.log("https://registry.npmjs.org/"); else writeFileSync(${JSON.stringify(marker)}, "called");\n`);
-	const result = spawnSync(process.execPath, [join(scripts, "build-company-linux.mjs")], {
-		encoding: "utf8",
-		env: { ...process.env, npm_execpath: fakeNpm },
-	});
+	const marker = join(directory, "npm-arguments");
+	writeFileSync(fakeNpm, `import { writeFileSync } from "node:fs";\nif (process.argv.slice(2).join(" ") === "config get registry") console.log(${JSON.stringify(registry)}); else { writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv.slice(2))); process.exit(7); }\n`);
+	const env = { ...process.env, npm_execpath: fakeNpm };
+	delete env.PI_COMPANY_NPM_REGISTRY;
+	return { directory, marker, env, script: join(fixtureScripts, "build-company-linux.mjs") };
+}
+
+test("rejects a public npm registry before installing dependencies", { skip: process.platform !== "linux" }, (t) => {
+	const f = registryFixture(t, "https://registry.npmjs.org/");
+	const result = spawnSync(process.execPath, [f.script], { cwd: f.directory, encoding: "utf8", env: f.env });
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /Configure npm registry/);
-	assert.equal(existsSync(marker), false);
+	assert.equal(existsSync(f.marker), false);
 });
 
 test("uses the configured npm mirror without an extra environment variable", { skip: process.platform !== "linux" }, (t) => {
-	const directory = mkdtempSync(join(tmpdir(), "pi-registry-check-"));
-	t.after(() => rmSync(directory, { recursive: true, force: true }));
-	const fakeNpm = join(directory, "npm.mjs");
-	const marker = join(directory, "npm-arguments");
-	writeFileSync(fakeNpm, `import { writeFileSync } from "node:fs";\nif (process.argv.slice(2).join(" ") === "config get registry") console.log("https://registry.example.invalid/"); else { writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv.slice(2))); process.exit(7); }\n`);
-	const env = { ...process.env, npm_execpath: fakeNpm };
-	delete env.PI_COMPANY_NPM_REGISTRY;
-	const result = spawnSync(process.execPath, [join(scripts, "build-company-linux.mjs")], { encoding: "utf8", env });
+	const f = registryFixture(t, "https://registry.example.invalid/");
+	const result = spawnSync(process.execPath, [f.script], { cwd: f.directory, encoding: "utf8", env: f.env });
 	assert.notEqual(result.status, 0);
-	const args = JSON.parse(readFileSync(marker, "utf8"));
+	assert.ok(existsSync(f.marker), `The mock npm install was not reached: ${result.stderr}`);
+	const args = JSON.parse(readFileSync(f.marker, "utf8"));
 	assert.equal(args[0], "ci");
 	assert.ok(args.includes("--registry=https://registry.example.invalid/"));
 });
