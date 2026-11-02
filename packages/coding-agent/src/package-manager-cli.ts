@@ -938,6 +938,12 @@ export async function handlePackageCommand(
 		return true;
 	}
 
+	if (options.command === "update" && process.env.PI_OFFLINE) {
+		console.error(chalk.red("Online updates are disabled in offline mode. Install a reviewed package instead."));
+		process.exitCode = 1;
+		return true;
+	}
+
 	if (options.command === "update" && options.updateTarget?.type === "models") {
 		try {
 			await refreshModelCatalogs(getAgentDir());

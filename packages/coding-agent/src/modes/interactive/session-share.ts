@@ -55,6 +55,10 @@ export function exportSessionForShare(filePath: string, session: AgentSession): 
 
 /** Share the current session through Radius, falling back to a private gist. */
 export async function shareSession(context: SessionShareContext): Promise<void> {
+	if (process.env.PI_OFFLINE) {
+		context.showError("Session sharing is disabled in offline mode. Use /export for a local copy.");
+		return;
+	}
 	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-share-"));
 	const jsonlFile = path.join(tempDir, "session.jsonl");
 	const htmlFile = path.join(tempDir, "session.html");
