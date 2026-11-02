@@ -1,8 +1,8 @@
 import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { saveCompanyGateway } from "../src/core/company-gateway.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { discoverGatewayModels, saveCompanyGateway } from "../src/core/company-gateway.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
 
 const previousDir = process.env.PI_CODING_AGENT_DIR;
@@ -14,6 +14,7 @@ function setup(): string {
 	return dir;
 }
 afterEach(() => {
+	vi.unstubAllGlobals();
 	if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 	else process.env.PI_CODING_AGENT_DIR = previousDir;
 	for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -107,5 +108,94 @@ describe("company gateway login configuration", () => {
 		await expect(saveCompanyGateway("https://gateway.invalid/v1", "model", "key")).rejects.toThrow();
 		expect(readFileSync(join(dir, "models.json"), "utf8")).toBe(raw);
 		await expect(saveCompanyGateway("https://user:secret@gateway.invalid/v1", "model", "key")).rejects.toThrow();
+	});
+});
+
+describe("gateway model discovery", () => {
+	it("uses the gateway Bearer key, parses metadata, and does not follow redirects", async () => {
+		const fetch = vi.fn(async () =>
+			Response.json({
+				data: [
+					{ id: "chat-a", context_window: 131072, max_output_tokens: 8192 },
+					{ id: "chat-b" },
+					{ id: "chat-a" },
+					{ id: "vectors", type: "embedding" },
+				],
+			}),
+		);
+		vi.stubGlobal("fetch", fetch);
+		expect(await discoverGatewayModels("https://gateway.invalid/v1/", "test-key")).toEqual([
+			{ id: "chat-a", contextWindow: 131072, maxTokens: 8192 },
+			{ id: "chat-b" },
+		]);
+		expect(fetch).toHaveBeenCalledWith(
+			"https://gateway.invalid/v1/models",
+			expect.objectContaining({
+				headers: { Authorization: "Bearer test-key", Accept: "application/json" },
+				redirect: "manual",
+			}),
+		);
+	});
+	it("adds /v1 for an origin and rejects failed auth, redirects, empty and paginated responses", async () => {
+		const fetch = vi
+			.fn()
+			.mockResolvedValueOnce(new Response("", { status: 401 }))
+			.mockResolvedValueOnce(
+				new Response(null, { status: 302, headers: { location: "https://elsewhere.invalid/" } }),
+			)
+			.mockResolvedValueOnce(Response.json({ data: [] }))
+			.mockResolvedValueOnce(Response.json({ data: [{ id: "m" }], has_more: true }));
+		vi.stubGlobal("fetch", fetch);
+		await expect(discoverGatewayModels("https://gateway.invalid", "key")).rejects.toThrow("认证失败");
+		expect(fetch.mock.calls[0]![0]).toBe("https://gateway.invalid/v1/models");
+		await expect(discoverGatewayModels("https://gateway.invalid", "key")).rejects.toThrow("HTTP 302");
+		await expect(discoverGatewayModels("https://gateway.invalid", "key")).rejects.toThrow("未返回");
+		await expect(discoverGatewayModels("https://gateway.invalid", "key")).rejects.toThrow("分页");
+	});
+	it("discovers from the configured gateway even when public catalog refresh is disabled", async () => {
+		vi.stubEnv("PI_OFFLINE", "1");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => Response.json({ data: [{ id: "internal-model" }] })),
+		);
+		try {
+			expect(await discoverGatewayModels("http://gateway.invalid/v1", "key")).toEqual([{ id: "internal-model" }]);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+	it("reports connection failure and cancellation without exposing credentials", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("secret transport detail");
+			}),
+		);
+		await expect(discoverGatewayModels("https://gateway.invalid/v1", "test-secret")).rejects.toThrow("无法连接网关");
+		const controller = new AbortController();
+		controller.abort();
+		await expect(
+			discoverGatewayModels("https://gateway.invalid/v1", "test-secret", controller.signal),
+		).rejects.toThrow("Login cancelled");
+	});
+	it("reuses the same gateway and preserves existing model settings when refreshing", async () => {
+		const dir = setup();
+		const base = "https://gateway.invalid/v1";
+		const first = await saveCompanyGateway(base, "old", "key1", [{ id: "old", contextWindow: 32768 }]);
+		const configPath = join(dir, "models.json");
+		const config = JSON.parse(readFileSync(configPath, "utf8"));
+		config.providers[first].models[0].contextWindow = 64000;
+		writeFileSync(configPath, JSON.stringify(config));
+		const second = await saveCompanyGateway(base, "new", "key2", [
+			{ id: "old", contextWindow: 1000 },
+			{ id: "new", maxTokens: 4096 },
+		]);
+		expect(second).toBe(first);
+		const updated = JSON.parse(readFileSync(configPath, "utf8"));
+		expect(updated.providers[first].models).toEqual([
+			{ id: "old", contextWindow: 64000 },
+			{ id: "new", maxTokens: 4096 },
+		]);
+		expect(JSON.parse(readFileSync(join(dir, "auth.json"), "utf8"))[first].key).toBe("key2");
 	});
 });
