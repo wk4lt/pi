@@ -577,7 +577,6 @@ export async function main(args: string[], options?: MainOptions) {
 	setThemeJsonValidator(validateThemeJson);
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
 	// Company CLI: suppress automatic external services while allowing configured gateways and MCP.
-	const offlineMode = true;
 	process.env.PI_OFFLINE = "1";
 	process.env.PI_SKIP_VERSION_CHECK = "1";
 	process.env.PI_TELEMETRY = "0";
@@ -934,16 +933,6 @@ export async function main(args: string[], options?: MainOptions) {
 	if (startupBenchmark && appMode !== "interactive") {
 		console.error(chalk.red("Error: PI_STARTUP_BENCHMARK only supports interactive mode"));
 		process.exit(1);
-	}
-
-	// RPC refreshes catalogs here in the background; interactive mode starts its refresh after TUI initialization.
-	if (!offlineMode && appMode === "rpc") {
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 15_000);
-		void modelRuntime
-			.refresh({ signal: controller.signal })
-			.catch(() => {})
-			.finally(() => clearTimeout(timeout));
 	}
 
 	if (appMode === "rpc") {
