@@ -76,7 +76,7 @@ import {
 	detectCacheMiss,
 } from "../../core/cache-stats.ts";
 import { formatCacheWarmingStatus, formatCacheWarmingUsage } from "../../core/cache-warmer.ts";
-import { saveCompanyGateway } from "../../core/company-gateway.ts";
+import { discoverGatewayModels, type GatewayModel, saveCompanyGateway } from "../../core/company-gateway.ts";
 import { findExtensionStackMatches, recordCrash, takeUnnotifiedCrash } from "../../core/crash-log.ts";
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "../../core/defaults.ts";
 import type {
@@ -5775,11 +5775,41 @@ export class InteractiveMode {
 		try {
 			const dialog = showDialog();
 			const baseUrl = await dialog.showPrompt("网关基础地址（例如以 /v1 结尾）");
-			const modelId = await dialog.showPrompt("模型名称（网关要求的 model ID）");
 			const secretDialog = showDialog(true);
 			const apiKey = await secretDialog.showPrompt("API Key（输入内容不会显示）");
 			if (secretDialog.signal.aborted) return;
-			const providerId = await saveCompanyGateway(baseUrl, modelId, apiKey);
+			secretDialog.showWaiting("正在从网关获取模型列表...");
+			let models: GatewayModel[];
+			try {
+				models = await discoverGatewayModels(baseUrl, apiKey, secretDialog.signal);
+			} catch (error) {
+				if (secretDialog.signal.aborted) return;
+				const fallback = showDialog();
+				fallback.showInfo(
+					`无法获取模型列表：${error instanceof Error ? error.message : "请求失败"}。可以手动输入模型名称，或按 Esc 取消。`,
+				);
+				const modelId = (await fallback.showPrompt("模型名称（网关要求的 model ID）")).trim();
+				if (!modelId) throw new Error("模型名称不能为空。");
+				models = [{ id: modelId }];
+			}
+			let modelId = models[0]!.id;
+			if (models.length > 1) {
+				const selected = await new Promise<string | undefined>((resolve) => {
+					const selector = new ExtensionSelectorComponent(
+						"选择默认模型",
+						models.map((model) => model.id),
+						resolve,
+						() => resolve(undefined),
+					);
+					this.editorContainer.clear();
+					this.editorContainer.addChild(selector);
+					this.ui.setFocus(selector);
+					this.ui.requestRender();
+				});
+				if (!selected) return;
+				modelId = selected;
+			}
+			const providerId = await saveCompanyGateway(baseUrl, modelId, apiKey, models);
 			const refreshed = await this.session.modelRuntime.refresh({ providers: [providerId], allowNetwork: false });
 			const error = refreshed.errors.get(providerId);
 			if (error) throw error;
@@ -5790,7 +5820,7 @@ export class InteractiveMode {
 			this.footer.invalidate();
 			this.updateEditorBorderColor();
 			this.showStatus(
-				"网关配置已保存，模型已选择。上下文和输出上限默认为 128000/16384，可在 models.json 中按实际限制调整。",
+				"网关配置已保存，模型已选择。未提供的上下文和输出上限使用默认值，可在 models.json 中按实际限制调整。",
 			);
 		} catch (error) {
 			if (!(error instanceof Error && error.message === "Login cancelled")) {
