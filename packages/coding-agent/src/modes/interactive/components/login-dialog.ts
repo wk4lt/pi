@@ -6,6 +6,13 @@ import { AuthUrlComponent } from "./auth-url.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
+/** Keep gateway API keys out of terminal rendering and scrollback. */
+class SecretInput extends Input {
+	override render(_width: number): string[] {
+		return [this.getValue() ? "> [hidden]" : "> "];
+	}
+}
+
 /**
  * Login dialog component - replaces editor during OAuth login flow
  */
@@ -13,6 +20,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	private contentContainer: Container;
 	private input: Input;
 	private tui: TUI;
+	private readonly secret: boolean;
 	/** The shown sign-in URL, which `app.message.copy` copies. */
 	private authUrl?: AuthUrlComponent;
 	private abortController = new AbortController();
@@ -36,9 +44,11 @@ export class LoginDialogComponent extends Container implements Focusable {
 		onComplete: (success: boolean, message?: string) => void,
 		providerNameOverride?: string,
 		titleOverride?: string,
+		secret = false,
 	) {
 		super();
 		this.tui = tui;
+		this.secret = secret;
 		this.onComplete = onComplete;
 
 		const providerName = providerNameOverride || providerId;
@@ -55,7 +65,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.addChild(this.contentContainer);
 
 		// Input (always present, used when needed)
-		this.input = new Input();
+		this.input = secret ? new SecretInput() : new Input();
 		this.input.onSubmit = () => {
 			if (this.inputResolver) {
 				const value = this.input.getValue();
@@ -79,7 +89,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 
 	private replaceInputWithSubmittedText(value: string): void {
 		this.contentContainer.children = this.contentContainer.children.map((child) =>
-			child === this.input ? new Text(`> ${value}`, 0, 0) : child,
+			child === this.input ? new Text(this.secret ? "> [hidden]" : `> ${value}`, 0, 0) : child,
 		);
 	}
 

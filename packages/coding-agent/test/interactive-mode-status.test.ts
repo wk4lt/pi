@@ -542,7 +542,7 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 		]);
 	});
 
-	test("matches login command arguments by provider id and name", async () => {
+	test("does not suggest external providers for gateway login", async () => {
 		type FakeInteractiveMode = {
 			session: {
 				scopedModels: [];
@@ -589,20 +589,12 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 			signal: new AbortController().signal,
 		});
 
-		expect(suggestions?.items).toEqual([
-			{
-				value: "anthropic",
-				label: "anthropic",
-				description: "Anthropic · subscription/API key",
-			},
-		]);
-
-		// OAuth sign-in without a subscription, such as Radius, is an account.
+		expect(suggestions?.items).toBeUndefined();
 		const radiusLine = "/login radius";
 		const radiusSuggestions = await provider.getSuggestions([radiusLine], 0, radiusLine.length, {
 			signal: new AbortController().signal,
 		});
-		expect(radiusSuggestions?.items).toEqual([{ value: "radius", label: "radius", description: "Radius · account" }]);
+		expect(radiusSuggestions?.items).toBeUndefined();
 	});
 });
 describe("InteractiveMode.showLoadedResources", () => {
